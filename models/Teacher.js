@@ -32,6 +32,34 @@ const teacherSchema = new mongoose.Schema({
     enum: ['full-time', 'part-time', 'visiting'],
     default: 'full-time'
   },
+  availableTimeSlots: [{
+    dayOfWeek: {
+      type: Number,
+      required: [true, 'Please select a day of the week'],
+      min: 0, // 0 = Sunday, 1 = Monday, etc.
+      max: 6
+    },
+    startTime: {
+      type: String,
+      required: [true, 'Please provide start time'],
+      match: [/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Please enter a valid time in HH:MM format (24-hour)']
+    },
+    endTime: {
+      type: String,
+      required: [true, 'Please provide end time'],
+      match: [/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Please enter a valid time in HH:MM format (24-hour)'],
+      validate: {
+        validator: function(endTime) {
+          return this.startTime < endTime;
+        },
+        message: 'End time must be after start time'
+      }
+    },
+    isRecurring: {
+      type: Boolean,
+      default: true
+    }
+  }],
   subjects: {
     physics: {
       selected: { type: Boolean, default: false },
