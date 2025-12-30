@@ -71,8 +71,40 @@ export const createTeacher = asyncHandler(async (req, res) => {
     contactNo,
     address,
     teacherType,
-    subjects
+    subjects,
+    availableTimeSlots = []
   } = req.body;
+
+  // Validate time slots for part-time teachers
+  if (teacherType === 'part-time') {
+    if (!Array.isArray(availableTimeSlots) || availableTimeSlots.length === 0) {
+      res.status(400);
+      throw new Error('At least one available time slot is required for part-time teachers');
+    }
+
+    // Validate each time slot
+    for (const slot of availableTimeSlots) {
+      if (!slot.dayOfWeek || slot.dayOfWeek < 0 || slot.dayOfWeek > 6) {
+        res.status(400);
+        throw new Error('Invalid day of week in time slot');
+      }
+      
+      if (!slot.startTime || !/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(slot.startTime)) {
+        res.status(400);
+        throw new Error('Invalid start time format. Use HH:MM (24-hour format)');
+      }
+      
+      if (!slot.endTime || !/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(slot.endTime)) {
+        res.status(400);
+        throw new Error('Invalid end time format. Use HH:MM (24-hour format)');
+      }
+      
+      if (slot.startTime >= slot.endTime) {
+        res.status(400);
+        throw new Error('End time must be after start time');
+      }
+    }
+  }
 
   try {
     console.log('Checking if teacher exists with email:', email);
@@ -92,15 +124,28 @@ export const createTeacher = asyncHandler(async (req, res) => {
       subjects: Object.keys(subjects || {}).filter(sub => subjects[sub]?.selected)
     });
 
-    const teacher = await Teacher.create({
+    const teacherData = {
       name,
       email,
       password,
       contactNo,
       address,
       teacherType,
-      subjects
-    });
+      subjects,
+      // Include availableTimeSlots only if teacher is part-time
+      ...(teacherType === 'part-time' && {
+        availableTimeSlots: availableTimeSlots.map(slot => ({
+          dayOfWeek: parseInt(slot.dayOfWeek, 10),
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          isRecurring: slot.isRecurring !== false // Default to true if not specified
+        }))
+      })
+    };
+    
+    console.log('Creating teacher with data:', JSON.stringify(teacherData, null, 2));
+
+    const teacher = await Teacher.create(teacherData);
 
     if (teacher) {
       console.log('✅ Teacher created successfully:', {
@@ -145,6 +190,14 @@ export const updateTeacher = asyncHandler(async (req, res) => {
     teacher.email = req.body.email || teacher.email;
     teacher.contactNo = req.body.contactNo || teacher.contactNo;
     teacher.address = req.body.address || teacher.address;
+    // If changing to part-time, ensure time slots are provided
+    if (req.body.teacherType === 'part-time' && teacher.teacherType !== 'part-time') {
+      if (!req.body.availableTimeSlots || !Array.isArray(req.body.availableTimeSlots) || req.body.availableTimeSlots.length === 0) {
+        res.status(400);
+        throw new Error('At least one available time slot is required for part-time teachers');
+      }
+    }
+    
     teacher.teacherType = req.body.teacherType || teacher.teacherType;
     if (req.body.password) {
       teacher.password = req.body.password;
@@ -152,7 +205,16 @@ export const updateTeacher = asyncHandler(async (req, res) => {
     if (req.body.subjects) {
       teacher.subjects = req.body.subjects;
     }
-    teacher.subjects = req.body.subjects || teacher.subjects;
+    
+    // Update time slots if provided
+    if (req.body.availableTimeSlots && Array.isArray(req.body.availableTimeSlots)) {
+      teacher.availableTimeSlots = req.body.availableTimeSlots;
+    }
+    
+    // If changing from part-time to another type, clear time slots
+    if (teacher.teacherType !== 'part-time' && req.body.teacherType !== 'part-time') {
+      teacher.availableTimeSlots = [];
+    }
     teacher.joiningDate = req.body.joiningDate || teacher.joiningDate;
     teacher.isActive = req.body.isActive !== undefined ? req.body.isActive : teacher.isActive;
 
